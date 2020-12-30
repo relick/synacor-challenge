@@ -1,0 +1,10 @@
+1: read the spec
+2: run pre-test
+3: successfully complete test
+4: use the tablet
+5: find the can (west, south, north, in the maze)
+6: place the coins in the right order to solve the equation _ + _ * _^2 + _^3 - _ (blue/9, red/2, shiny/5, concave/7, corroded/3)
+7: 
+thoughts: debug what happens after doing teleport - find what accesses register 8 and search in the binary for this code.
+if (reg7 == 0) {
+8: 
