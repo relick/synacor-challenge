@@ -6,6 +6,7 @@
 #include <fstream>
 #include <cassert>
 #include <string>
+#include <unordered_map>
 
 #include "common.h"
 #include "Memory.h"
@@ -81,6 +82,10 @@ public:
 		return m_mem[GetArg(_addr)];
 	}
 
+	std::unordered_map<uint16, Op> runOps;
+	std::unordered_map<uint16, Op> writtenOps;
+	std::unordered_map<uint16, Op> overWrittenOps;
+
 	uint16 const& Get(uint15 _addr) const
 	{
 		return m_mem[_addr];
@@ -119,7 +124,7 @@ public:
 		else
 		{
 			assert(arg <= 32775);
-			return std::string("reg") + std::to_string(arg - 32768); //register
+			return std::string("reg[") + std::to_string(arg - 32768) + "]"; //register
 		}
 	}
 
@@ -141,6 +146,9 @@ public:
 		m_stack.pop();
 		return ret;
 	}
+
+	void Save();
+	void Load();
 
 	int Run();
 

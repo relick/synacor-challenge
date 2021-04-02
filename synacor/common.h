@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#define USE_EXACT_NUMBER_TYPES 0
+#define USE_EXACT_NUMBER_TYPES 1
 
 #if USE_EXACT_NUMBER_TYPES
 using int8 = int8_t;

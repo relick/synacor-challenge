@@ -65,7 +65,28 @@ int Machine::Run()
 
 	while (true)
 	{
-		switch (GetOp(ip++))
+		Op const op = GetOp(ip++);
+
+		if (overWrittenOps.contains(ip.x) && overWrittenOps[ip.x] != op)
+		{
+			std::cout << "self-modified then ran (overwrite)!\n";
+		}
+
+		if (writtenOps.contains(ip.x))
+		{
+			std::cout << "self-modified then ran (newly written)!\n";
+		}
+
+		if (runOps.contains(ip.x) && runOps[ip.x] != op)
+		{
+			std::cout << "self-modified!\n";
+		}
+		else
+		{
+			runOps[ip.x] = op;
+		}
+
+		switch (op)
 		{
 		case Op::HALT:
 		{
@@ -218,8 +239,17 @@ int Machine::Run()
 		case Op::WMEM:
 		{
 			// 16 [a] b
-			uint16& a = GetArgMem(ip++);
+			uint16 const arg = GetArg(ip++);
+			uint16& a = Get(arg);
 			uint16 const b = GetArg(ip++);
+			if (a <= 21)
+			{
+				overWrittenOps[arg] = static_cast<Op>(a);
+			}
+			if (b <= 21)
+			{
+				writtenOps[arg] = static_cast<Op>(b);
+			}
 			a = b;
 			break;
 		}
@@ -295,7 +325,7 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 	{
 		if (!gotos.contains(_addr))
 		{
-			gotos[_addr] = std::to_string(nextGotoNum++);
+			gotos[_addr] = std::string("l") + std::to_string(nextGotoNum++);
 		}
 		return gotos[_addr];
 	};
@@ -303,9 +333,11 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 	std::unordered_set<uint16> visited;
 	std::unordered_set<uint16> toVisit;
 	toVisit.insert(_start.x);
+	toVisit.insert(1287);
 
 	uint15 ip = _start;
 	bool reachedEndOfBlock = true;
+	bool finalPass = false;
 
 	auto ForwardIP = [&]() -> uint15
 	{
@@ -314,33 +346,52 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 	};
 
 	std::string* continuedString{ nullptr };
-	while (!reachedEndOfBlock || !toVisit.empty())
+	while (!reachedEndOfBlock || !toVisit.empty() || finalPass)
 	{
-		if (reachedEndOfBlock)
+		if (!finalPass)
 		{
-			while (!toVisit.empty() && visited.contains(*toVisit.begin()))
+			if (reachedEndOfBlock)
 			{
+				while (!toVisit.empty() && visited.contains(*toVisit.begin()))
+				{
+					toVisit.erase(toVisit.begin());
+				}
+				if (toVisit.empty())
+				{
+					finalPass = true;
+					ip = _start;
+					continue;
+					break;
+				}
+				ip = *toVisit.begin();
+				visited.insert(*toVisit.begin());
 				toVisit.erase(toVisit.begin());
+				reachedEndOfBlock = false;
 			}
-			if (toVisit.empty())
-			{
-				break;
-			}
-			ip = *toVisit.begin();
-			visited.insert(*toVisit.begin());
-			toVisit.erase(toVisit.begin());
-			reachedEndOfBlock = false;
-		}
 
-		if (linesVisited[ip.x - _start.x])
-		{
-			reachedEndOfBlock = true;
-			continue;
+			if (linesVisited[ip.x - _start.x])
+			{
+				reachedEndOfBlock = true;
+				if (toVisit.empty())
+				{
+					finalPass = true;
+					ip = _start;
+				}
+				continue;
+			}
 		}
 
 		std::string& line = lines[ip.x - _start.x];
 		bool wasContinuedString = false;
 
+		if (finalPass)
+		{
+			if (linesVisited[ip.x - _start.x])
+			{
+				++ip;
+				continue;
+			}
+		}
 		switch (GetOp(ForwardIP()))
 		{
 		case Op::HALT:
@@ -605,7 +656,7 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 			std::string const b = TextArg(ForwardIP());
 			if (_alt)
 			{
-				line += a + " = *(" + b + ");";
+				line += a + " = mem[" + b + "];";
 			}
 			else
 			{
@@ -620,7 +671,7 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 			std::string const b = TextArg(ForwardIP());
 			if (_alt)
 			{
-				line += "*(" + a + ") = " + b + ';';
+				line += "mem[" + a + "] = " + b + ';';
 			}
 			else
 			{
@@ -662,6 +713,7 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 			{
 				line += "RET;";
 			}
+			reachedEndOfBlock = true;
 			break;
 		}
 		case Op::OUT:
@@ -733,9 +785,18 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 			continuedString = nullptr;
 		}
 
+		if (finalPass)
+		{
+			reachedEndOfBlock = false;
+		}
+
 		if (ip.x >= _end.x)
 		{
 			reachedEndOfBlock = true;
+			if (finalPass)
+			{
+				break;
+			}
 		}
 	}
 
@@ -754,7 +815,24 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 		}
 		else
 		{
-			line = "\t\t" + line;
+			if (!linesVisited[i])
+			{
+				uint16 const n = Get(_start + i);
+				line = "\t\t" + (n <= 255 ? std::string{ static_cast<char>(n) } : std::to_string(n));
+			}
+			else
+			{
+				line = "\t\t" + line;
+			}
+			if (line == "\t\t" || line[2] == '\\')
+			{
+				line.clear();
+			}
+		}
+
+		if (!line.empty())
+		{
+			line = std::to_string(i) + ":\t" + line;
 		}
 		++i;
 	}
@@ -762,9 +840,10 @@ std::vector<std::string> Machine::Disassemble(bool _alt, uint15 _start, uint15 _
 	// strip out backslashes
 	for (auto lineI = lines.begin(); lineI != lines.end();)
 	{
-		if ((*lineI)[2] == '\\' || *lineI == "\t\t")
+		if ((*lineI).empty())
 		{
 			lineI = lines.erase(lineI);
+			//++lineI;
 		}
 		else
 		{
